@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   rosplan_dispatch_msgs
   rosplan_knowledge_msgs
   rosplan_planning_system
+  rcll_ros_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -95,8 +96,19 @@ target_link_libraries(rosplan_kb_updater_navgraph
 ## Install ##
 #############
 
-install(TARGETS rosplan_interface_behaviorengine rosplan_kb_updater_navgraph
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+# all install targets should use catkin DESTINATION variables
+# See http://ros.org/doc/api/catkin/html/adv_user_guide/variables.html
+
+## in contrast to setup.py, you can choose the destination
+# install(PROGRAMS
+#   scripts/my_python_script
+#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+# )
+
+## Mark executables and/or libraries for installation
+# install(TARGETS rosplan_interface_behaviorengine rosplan_interface_behaviorengine_node
+#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+# )
+

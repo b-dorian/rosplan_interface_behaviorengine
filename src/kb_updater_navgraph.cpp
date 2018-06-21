@@ -46,10 +46,8 @@ class ROSPlanKbUpdaterNavGraph {
 	ROSPlanKbUpdaterNavGraph(ros::NodeHandle &n)
 		: n(n), static_nodes_sent_(false)
 	{
-		sub_navgraph_ = n.subscribe("navgraph", 10,
-		                            &ROSPlanKbUpdaterNavGraph::navgraph_cb, this);
-		sub_machine_info_ = n.subscribe("rcll/machine_info", 10,
-		                                &ROSPlanKbUpdaterNavGraph::machine_info_cb, this);
+		sub_navgraph_ = n.subscribe("navgraph", 10, &ROSPlanKbUpdaterNavGraph::navgraph_cb, this);
+		sub_machine_info_ = n.subscribe("rcll/machine_info", 10, &ROSPlanKbUpdaterNavGraph::machine_info_cb, this);
 
 		create_svc_update_knowledge();
 		create_svc_current_knowledge();
@@ -65,26 +63,24 @@ class ROSPlanKbUpdaterNavGraph {
 		get_functions();
 
 		if (functions_.find(cfg_dist_func_) == functions_.end()) {
-			ROS_ERROR("Failed to get prototype for function '%s'", cfg_dist_func_.c_str());
+			ROS_ERROR("[RP-Nav] Failed to get prototype for function '%s'", cfg_dist_func_.c_str());
 			throw std::runtime_error("Failed to get prototype for distance function");
 		}
 		if (functions_[cfg_dist_func_].typed_parameters.size() != 4) {
-			ROS_ERROR("Function '%s' is not a binary function, must be of form "
-			          "(name ?from-loc ?from-side ?to-loc ?to-side)",
-			          cfg_dist_func_.c_str());
+			ROS_ERROR("[RP-Nav] Function '%s' is not a binary function, must be of form (name ?from-loc ?from-side ?to-loc ?to-side)", cfg_dist_func_.c_str());
 			throw std::runtime_error("Invalid distance function prototype, see log");			
 		}
 
-		ROS_INFO("Distance function '%s'", cfg_dist_func_.c_str());
+		ROS_INFO("[RP-Nav] Distance function '%s'", cfg_dist_func_.c_str());
 		for (const auto &p : functions_[cfg_dist_func_].typed_parameters) {
-			ROS_INFO("  Argument %s:%s", p.key.c_str(), p.value.c_str());
+			ROS_INFO("[RP-Nav]   Argument %s:%s", p.key.c_str(), p.value.c_str());
 		}
 
 		read_static_nodes();
 		if (! static_nodes_.empty()) {
-			ROS_INFO("Static nodes");
+			ROS_INFO("[RP-Nav] Static nodes");
 			for (const auto &n : static_nodes_) {
-				ROS_INFO("  - %s -> %s", n.first.c_str(), n.second.c_str());
+				ROS_INFO("[RP-Nav]   - %s -> %s", n.first.c_str(), n.second.c_str());
 			}
 		}
 	}
@@ -92,53 +88,41 @@ class ROSPlanKbUpdaterNavGraph {
 	void
 	create_svc_update_knowledge()
 	{
-		svc_update_knowledge_ =
-			n.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateServiceArray>
-			("kcl_rosplan/update_knowledge_base_array", /* persistent */ true);
-
-		ROS_INFO("Waiting for ROSPlan service update_knowledge_base");
+		svc_update_knowledge_ = n.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateServiceArray>("rosplan_knowledge_base/update_array", /* persistent */ true);
+		ROS_INFO("[RP-Nav] Waiting for ROSPlan service update_knowledge_base");
 		svc_update_knowledge_.waitForExistence();
 	}
 
 	void
 	create_svc_current_knowledge()
 	{
-		svc_current_knowledge_ =
-			n.serviceClient<rosplan_knowledge_msgs::GetAttributeService>
-			("kcl_rosplan/get_current_knowledge", /* persistent */ true);
-		ROS_INFO("Waiting for ROSPlan service get_current_knowledge");
+		svc_current_knowledge_ = n.serviceClient<rosplan_knowledge_msgs::GetAttributeService>("rosplan_knowledge_base/state/propositions", /* persistent */ true);
+		ROS_INFO("[RP-Nav] Waiting for ROSPlan service rosplan_knowledge_base/state/propositions");
 		svc_current_knowledge_.waitForExistence();
 	}
 
 	void
 	create_svc_current_instances()
 	{
-		svc_current_instances_ =
-			n.serviceClient<rosplan_knowledge_msgs::GetInstanceService>
-			("kcl_rosplan/get_current_instances", /* persistent */ true);
-		ROS_INFO("Waiting for ROSPlan service get_current_instances");
+		svc_current_instances_ = n.serviceClient<rosplan_knowledge_msgs::GetInstanceService>("rosplan_knowledge_base/state/instances", /* persistent */ true);
+		ROS_INFO("[RP-Nav] Waiting for ROSPlan service state/instances");
 		svc_current_instances_.waitForExistence();
 	}
 
 	void
 	create_svc_navgraph_pwcosts()
 	{
-		svc_navgraph_pwcosts_ =
-			n.serviceClient<fawkes_msgs::NavGraphGetPairwiseCosts>
-			("navgraph/get_pairwise_costs", /* persistent */ true);
-		ROS_INFO("Waiting for Fawkes service navgraph/get_pairwise_costs");
+		svc_navgraph_pwcosts_ = n.serviceClient<fawkes_msgs::NavGraphGetPairwiseCosts>("navgraph/get_pairwise_costs", /* persistent */ true);
+		ROS_INFO("[RP-Nav] Waiting for Fawkes service navgraph/get_pairwise_costs");
 		svc_navgraph_pwcosts_.waitForExistence();
 	}
 
 	void
 	get_functions()
 	{
-		ros::service::waitForService("kcl_rosplan/get_domain_functions",ros::Duration(20));
-		ros::ServiceClient func_client =
-			n.serviceClient<rosplan_knowledge_msgs::GetDomainAttributeService>
-			  ("kcl_rosplan/get_domain_functions", /* persistent */ true);
-		if (! func_client.waitForExistence(ros::Duration(20))) {
-			ROS_ERROR("No service provider for get_domain_functions");
+		ros::ServiceClient func_client = n.serviceClient<rosplan_knowledge_msgs::GetDomainAttributeService>("rosplan_knowledge_base/domain/functions", /* persistent */ true);
+		if (! func_client.waitForExistence(ros::Duration(120))) {
+			ROS_ERROR("[RP-Nav] No service provider for rosplan_knowledge_base/domain/functions");
 			return;
 		}	
 
@@ -150,13 +134,13 @@ class ROSPlanKbUpdaterNavGraph {
 				                             [&rf](const auto &pn) { return rf == pn.name; });
 				if (i != func_srv.response.items.end()) {
 					functions_[rf] = *i;
-					ROS_INFO("Relevant function: %s", i->name.c_str());
+					ROS_INFO("[RP-Nav] Relevant function: %s", i->name.c_str());
 				} else {
-					ROS_ERROR("Failed to get function info for: %s", rf.c_str());
+					ROS_ERROR("[RP-Nav] Failed to get function info for: %s", rf.c_str());
 				}
 			}
 		} else {
-			ROS_ERROR("Failed to call get_domain_functions");
+			ROS_ERROR("[RP-Nav] Failed to call get_domain_functions");
 		}
 	}
 
@@ -168,13 +152,13 @@ class ROSPlanKbUpdaterNavGraph {
 		XmlRpc::XmlRpcValue value;
 		privn.getParam("static_nodes", value);
 		if (value.getType() != XmlRpc::XmlRpcValue::TypeStruct) {
-			ROS_ERROR("[KB-NavGraph] Invalid configuration, 'static-nodes' not a map %i", value.getType());
+			ROS_ERROR("[RP-Nav] [KB-NavGraph] Invalid configuration, 'static-nodes' not a map %i", value.getType());
 			throw std::runtime_error("Invalid configuration, static nodes not a map");
 		}
 
 		for (auto &e : value) {
 			if (e.second.getType() != XmlRpc::XmlRpcValue::TypeString) {
-				ROS_ERROR("[KB-NavGraph] Invalid configuration, 'static-nodes/%s' no a string",
+				ROS_ERROR("[RP-Nav] [KB-NavGraph] Invalid configuration, 'static-nodes/%s' no a string",
 				          e.first.c_str());
 				throw std::runtime_error("Invalid configuration, static node not a string");
 			}
@@ -217,18 +201,18 @@ class ROSPlanKbUpdaterNavGraph {
 		                     known_machines_.begin(), known_machines_.end());
 		
 		if (! em || (! static_nodes_.empty() && ! static_nodes_sent_)) {
-			ROS_INFO("Machine info triggers sending of navgraph");
+			ROS_INFO("[RP-Nav] Machine info triggers sending of navgraph");
 			std::string machine_str =
 				std::accumulate(std::next(nodes.begin()), nodes.end(), nodes.front(),
 				                [](std::string &s, const std::string &n) { return s + ", " + n; });
-			ROS_INFO("  Received machines: %s", machine_str.c_str());
+			ROS_INFO("[RP-Nav]   Received machines: %s", machine_str.c_str());
 
 			if (! known_machines_.empty()) {
 				machine_str =
 					std::accumulate(std::next(known_machines_.begin()), known_machines_.end(),
 					                known_machines_.front(),
 					                [](std::string &s, const std::string &n) { return s + ", " + n; });
-				ROS_INFO("  Known machines: %s", machine_str.c_str());
+				ROS_INFO("[RP-Nav]   Known machines: %s", machine_str.c_str());
 			}
 			send_navgraph(nodes);
 		}
@@ -238,7 +222,7 @@ class ROSPlanKbUpdaterNavGraph {
 	void
 	navgraph_cb(const fawkes_msgs::NavGraph::ConstPtr& msg)
 	{
-		ROS_INFO("Updating graph");
+		ROS_INFO("[RP-Nav] Updating graph");
 		last_navgraph_msg_ = msg;
 
 		// we don't know any machines yet, just remember the message and don't do anything else
@@ -259,7 +243,7 @@ class ROSPlanKbUpdaterNavGraph {
 		                     { return e1.from_node == e2.from_node && e1.to_node == e2.to_node; });
 
 		if (! en || ! ee  || (! static_nodes_.empty() && ! static_nodes_sent_)) {
-			ROS_INFO("Navgraph message triggers sending of navgraph");
+			ROS_INFO("[RP-Nav] Navgraph message triggers sending of navgraph");
 			send_navgraph(known_machines_);
 		}
 	}
@@ -292,13 +276,14 @@ class ROSPlanKbUpdaterNavGraph {
 	void
 	send_navgraph(const std::vector<std::string> &nodes)
 	{
+		ROS_INFO("[RP-Nav] Sending graph");
 		rosplan_knowledge_msgs::GetInstanceService srv;
 		srv.request.type_name = cfg_machine_instance_type_;
 		if (! svc_current_instances_.isValid()) {
 			create_svc_current_instances();
 		}
 		if (! svc_current_instances_.call(srv)) {
-			ROS_ERROR("Failed to retrieve current instances of type '%s'",
+			ROS_ERROR("[RP-Nav] Failed to retrieve current instances of type '%s'",
 			          cfg_machine_instance_type_.c_str());
 			return;
 		}
@@ -333,7 +318,7 @@ class ROSPlanKbUpdaterNavGraph {
 				std::accumulate(std::next(target_nodes.begin()), target_nodes.end(),
 				                target_nodes.front(),
 				                [](std::string &s, const std::string &n) { return s + ", " + n; });
-			ROS_INFO("Target nodes: %s", target_str.c_str());
+			ROS_INFO("[RP-Nav] Target nodes: %s", target_str.c_str());
 		}
 
 		for (const auto &n : static_nodes_) {
@@ -368,7 +353,7 @@ class ROSPlanKbUpdaterNavGraph {
 			create_svc_navgraph_pwcosts();
 		}
 		if (! svc_navgraph_pwcosts_.call(pwc_srv)) {
-			ROS_ERROR("Failed to retrieve pairwise costs of for nodes");
+			ROS_ERROR("[RP-Nav] Failed to retrieve pairwise costs of for nodes");
 			return;
 		}
 
@@ -377,7 +362,7 @@ class ROSPlanKbUpdaterNavGraph {
 			std::for_each(known_nodes.begin(), known_nodes.end(),
 			              [&node_str](const auto &s) { node_str += s + ", "; });
 			node_str.resize(node_str.size() - 2); // remove final ", "
-			ROS_ERROR("Failed to get pairwise costs for nodes (%s): %s",
+			ROS_ERROR("[RP-Nav] Failed to get pairwise costs for nodes (%s): %s",
 			          node_str.c_str(), pwc_srv.response.errmsg.c_str());
 			return;
 		}
@@ -385,9 +370,6 @@ class ROSPlanKbUpdaterNavGraph {
 		// now actually prepare the updates
 		rosplan_knowledge_msgs::KnowledgeUpdateServiceArray remsrv;
 		rosplan_knowledge_msgs::KnowledgeUpdateServiceArray addsrv;
-
-		remsrv.request.update_type = rosplan_knowledge_msgs::KnowledgeUpdateServiceArrayRequest::REMOVE_KNOWLEDGE;
-		addsrv.request.update_type = rosplan_knowledge_msgs::KnowledgeUpdateServiceArrayRequest::ADD_KNOWLEDGE;
 
 		erase_func_values(cfg_dist_func_, remsrv);
 
@@ -415,8 +397,9 @@ class ROSPlanKbUpdaterNavGraph {
 				new_a.values.push_back(kv);
 			}
 			new_a.function_value = pc.cost * cfg_cost_factor_;
+			addsrv.request.update_type.push_back(rosplan_knowledge_msgs::KnowledgeUpdateServiceArrayRequest::ADD_KNOWLEDGE);
 			addsrv.request.knowledge.push_back(new_a);
-			ROS_INFO("Adding '(= (%s %s %s %s %s) %f)' (cost: %f * %f)", cfg_dist_func_.c_str(),
+			ROS_INFO("[RP-Nav] Adding '(= (%s %s %s %s %s) %f)' (cost: %f * %f)", cfg_dist_func_.c_str(),
 			         args[0].second.c_str(), args[1].second.c_str(),
 			         args[2].second.c_str(), args[3].second.c_str(),
 			         new_a.function_value, pc.cost, cfg_cost_factor_);
@@ -424,13 +407,14 @@ class ROSPlanKbUpdaterNavGraph {
 
 		// execute kb updates
 		if (! remsrv.request.knowledge.empty()) {
+			remsrv.request.update_type.push_back(rosplan_knowledge_msgs::KnowledgeUpdateServiceArrayRequest::REMOVE_KNOWLEDGE);
 			if (! svc_update_knowledge_.isValid()) {
 				create_svc_update_knowledge();
 			}
 			if( ! svc_update_knowledge_.call(remsrv)) {
-				ROS_ERROR("Failed to remove functions");
+				ROS_ERROR("[RP-Nav] Failed to remove functions");
 			} else {
-				ROS_INFO("Removed %zu function values for '%s'", remsrv.request.knowledge.size(),
+				ROS_INFO("[RP-Nav] Removed %zu function values for '%s'", remsrv.request.knowledge.size(),
 				cfg_dist_func_.c_str());
 			}
 		}
@@ -439,10 +423,10 @@ class ROSPlanKbUpdaterNavGraph {
 				create_svc_update_knowledge();
 			}
 			if( ! svc_update_knowledge_.call(addsrv)) {
-				ROS_ERROR("Failed to add functions");
+				ROS_ERROR("[RP-Nav] Failed to add functions");
 				return;
 			}
-			ROS_INFO("Added %zu function values for '%s'", addsrv.request.knowledge.size(),
+			ROS_INFO("[RP-Nav] Added %zu function values for '%s'", addsrv.request.knowledge.size(),
 			         cfg_dist_func_.c_str());
 		}
 

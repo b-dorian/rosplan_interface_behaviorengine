@@ -57,14 +57,10 @@ class ROSPlanInterfaceBehaviorEngine {
 		: n(n),
 		  skiller_client_(n, "skiller", /* spin thread */ false)
 	{
-		sub_action_dispatch_ = n.subscribe("kcl_rosplan/action_dispatch", 10,
-		                                   &ROSPlanInterfaceBehaviorEngine::action_dispatch_cb, this);
-		pub_action_feedback_ =
-			n.advertise<rosplan_dispatch_msgs::ActionFeedback>("kcl_rosplan/action_feedback", 10, true);
+		sub_action_dispatch_ = n.subscribe("rosplan_plan_dispatcher/action_dispatch", 10, &ROSPlanInterfaceBehaviorEngine::action_dispatch_cb, this);
+		pub_action_feedback_ = n.advertise<rosplan_dispatch_msgs::ActionFeedback>("rosplan_plan_dispatcher/action_feedback", 10, true);
 
-		svc_update_knowledge_ =
-			n.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateService>("kcl_rosplan/update_knowledge_base",
-			                                                                /* persistent */ true);
+		svc_update_knowledge_ = n.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateService>("rosplan_knowledge_base/update", /* persistent */ true);
 		ROS_INFO("[RPI-BE] Waiting for ROSPlan service update_knowledge_base");
 		svc_update_knowledge_.waitForExistence();
 
@@ -126,10 +122,10 @@ class ROSPlanInterfaceBehaviorEngine {
 	{
 		ros::ServiceClient opdetail_client =
 			n.serviceClient<rosplan_knowledge_msgs::GetDomainOperatorDetailsService>
-			  ("kcl_rosplan/get_domain_operator_details");
+			  ("rosplan_knowledge_base/domain/operator_details");
 		//ROS_INFO("[RPI-BE] Waiting for ROSPlan service get_domain_operator_details");
-		if (! opdetail_client.waitForExistence(ros::Duration(10))) {
-			ROS_ERROR("[RPI-BE] Could not discover get_domain_operator_details service "
+		if (! opdetail_client.waitForExistence(ros::Duration(120))) {
+			ROS_ERROR("[RPI-BE] Could not discover rosplan_knowledge_base/domain/operator_details service "
 			          "(for action spec '%s')", name.c_str());
 			return;
 		}
@@ -173,7 +169,7 @@ class ROSPlanInterfaceBehaviorEngine {
 	{
 		ros::ServiceClient oplist_client =
 			n.serviceClient<rosplan_knowledge_msgs::GetDomainOperatorService>
-			  ("kcl_rosplan/get_domain_operators");
+			  ("rosplan_knowledge_base/domain/operators");
 		if (! oplist_client.waitForExistence(ros::Duration(120))) {
 			ROS_ERROR("[RPI-BE] Could not retrieve action specs from ROSPlan");
 			return;
@@ -276,12 +272,12 @@ class ROSPlanInterfaceBehaviorEngine {
 		}
 
 		// fetch and store predicate details
-		ros::service::waitForService("kcl_rosplan/get_domain_predicate_details",ros::Duration(20));
+		ros::service::waitForService("rosplan_knowledge_base/domain/predicate_details",ros::Duration(120));
 		ros::ServiceClient pred_client =
 			n.serviceClient<rosplan_knowledge_msgs::GetDomainPredicateDetailsService>
-			  ("kcl_rosplan/get_domain_predicate_details", /* persistent */ true);
-		if (! pred_client.waitForExistence(ros::Duration(20))) {
-			ROS_ERROR("[RPI-BE] No service provider for get_domain_predicate_details");
+			  ("rosplan_knowledge_base/domain/predicate_details", /* persistent */ true);
+		if (! pred_client.waitForExistence(ros::Duration(120))) {
+			ROS_ERROR("[RPI-BE] No service provider for rosplan_knowledge_base/domain/predicate_details");
 			return;
 		}
 
